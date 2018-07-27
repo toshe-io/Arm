@@ -1,0 +1,5 @@
+Inverted pieces from left arm:
+-bicep-p1.stl
+-forearm-servo-hold.stl (just needs more screws)
+-hand5.stl
+-hand5thumb3
