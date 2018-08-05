@@ -1,5 +1,4 @@
 #include <WiFi.h>
-#include <PubSubClient.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <Arm.h>
@@ -21,7 +20,6 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 HardwareSerial scServoSerial(2);
 
 WiFiClient espClient;
-PubSubClient client(espClient);
 Arm arm;
 
 void setup_wifi() {
