@@ -1,6 +1,5 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <WebSocketsServer.h>
 #include <ArduinoJson.h>
 #include <Arm.h>
 
@@ -12,10 +11,12 @@
 String clientId = "LeftArm";
 const char* ssid = "Singularity";
 const char* password = "r78ny8qt";
+const char* mqtt_server = "192.168.0.211";
 
 const bool debug = false;
 
-WebSocketsServer webSocket = WebSocketsServer(81);
+const char* subscribeTopics[] ={"arm/left/set/servo"
+                                };
 
 // Causing "InstrFetchProhibited" Kernel panic if not declared in main scope
 HardwareSerial scServoSerial(2);
@@ -46,7 +47,35 @@ void setup_wifi() {
     Serial.println(WiFi.localIP());
 }
 
-/*
+void subscribe() {
+    for (int i = 0; i < sizeof(subscribeTopics) / sizeof(int) ; i++) {
+        client.subscribe(subscribeTopics[i]);
+    }
+}
+
+void reconnect() {
+    // Loop until we're reconnected
+    while (!client.connected()) {
+        Serial.print("Attempting MQTT connection...");
+        // Create a random client ID
+        clientId += "-" + String(random(0xffff), HEX);
+        // Attempt to connect
+        if (client.connect(clientId.c_str())) {
+            Serial.println("connected");
+            // Once connected, publish an announcement...
+            client.publish("status/connect", clientId.c_str());
+            digitalWrite(LED_BUILTIN, HIGH);
+        } else {
+            Serial.print("failed, rc=");
+            Serial.print(client.state());
+            Serial.println(" try again in 5 seconds");
+            digitalWrite(LED_BUILTIN, LOW);
+            // Wait 5 seconds before retrying
+            delay(5000);
+        }
+    }
+}
+
 void callback(char* topic, byte* payload, unsigned int length) {
     char inData[length];
 
@@ -81,79 +110,23 @@ void callback(char* topic, byte* payload, unsigned int length) {
         }
     }
 }
-*/
-
-void handleSocketData(uint8_t * payload, size_t length) {
-    String payload_str = String((char*) payload);
-    
-    StaticJsonBuffer<200> jsonBuffer;
-    JsonObject& root = jsonBuffer.parseObject(payload_str);
-
-    String action = root["action"];
-
-    if (action.equals("move")) {
-        int servo = root["id"];
-        int pwm = root["pwm"];
-        
-        //Serial.printf("Servo: %d, PWM: %d\n", servo, pwm);
-
-        if (!debug) {
-            arm.move(servo, pwm);
-        }
-        Serial.println("");
-    }
-    else if (action.equals("calibrate")) {
-        int servo = root["id"];
-        int min = root["min"];
-        int max = root["max"];
-        arm.calibrate(servo, min, max);
-    }
-}
-
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length)
-{    
-    switch(type) 
-    {
-        case WStype_DISCONNECTED:
-            Serial.printf("Disconnected: %u\n", num);
-            break;
-        case WStype_CONNECTED:
-            {
-                IPAddress ip = webSocket.remoteIP(num);
-                Serial.printf("New socket client: %d.%d.%d.%d\n", ip[0], ip[1], ip[2], ip[3]);
-                webSocket.sendTXT(num, "Connected");
-            }
-            break;
-        case WStype_TEXT:
-            //Serial.print("RXT");
-            handleSocketData(payload, length);
-
-            break;
-        case WStype_BIN:
-            //Serial.print("RXB");
-            handleSocketData(payload, length);
-            
-            break;
-        default:
-            Serial.printf("Invalid WStype [%d]\r\n", type);
-            break;
-    }
-}
 
 void setup() {
     pinMode(BUILTIN_LED, OUTPUT);     // Initialize the BUILTIN_LED pin as an output
     Serial.begin(115200);
     setup_wifi();
-    webSocket.begin();
-    webSocket.onEvent(webSocketEvent);
+    client.setServer(mqtt_server, 1883);
+    client.setCallback(callback);
 
     arm.begin();
     arm.beginSCServo(scServoSerial);
-    arm.initServos();
 }
 
 void loop() {
-    webSocket.loop();
 
-    arm.update();
+    if (!client.connected()) {
+        reconnect();
+        subscribe();
+    }
+    client.loop();
 }
